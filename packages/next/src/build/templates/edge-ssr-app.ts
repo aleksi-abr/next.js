@@ -116,6 +116,7 @@ async function requestHandler(
   const routeMatch: RouteMatch = { resolvedPathname }
   const dev: DevRenderContext | undefined = createDevRenderContext(baseReq)
   const renderContext: AppPageRouteHandlerContext = {
+    requestUrl: baseReq.url,
     page: normalizedSrcPage,
     routeMatch,
     query,

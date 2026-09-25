@@ -2665,7 +2665,7 @@ type PreparedAppPageRender = {
   loaderTree: LoaderTree
 }
 
-type GenerateRequestId = (req: BaseNextRequest) => string | Promise<string>
+type GenerateRequestId = (requestUrl: string) => string | Promise<string>
 
 const generateRenderRequestId: GenerateRequestId = () => {
   if (process.env.NEXT_RUNTIME === 'edge') {
@@ -2677,9 +2677,9 @@ const generateRenderRequestId: GenerateRequestId = () => {
   }
 }
 
-const generatePrerenderRequestId: GenerateRequestId = async (req) => {
+const generatePrerenderRequestId: GenerateRequestId = async (requestUrl) => {
   return Buffer.from(
-    await crypto.subtle.digest('SHA-1', Buffer.from(req.url))
+    await crypto.subtle.digest('SHA-1', Buffer.from(requestUrl))
   ).toString('hex')
 }
 
@@ -2725,6 +2725,7 @@ function initializeClientComponentLoadTracking(
 async function prepareAppPageRender(
   req: BaseNextRequest,
   res: BaseNextResponse,
+  requestUrl: string,
   url: ReturnType<typeof parseRelativeUrl>,
   pagePath: string,
   query: NextParsedUrlQuery,
@@ -2817,7 +2818,7 @@ async function prepareAppPageRender(
     requestId = requestInsightsIdentity.requestId
   } else {
     // Otherwise we generate a new request ID.
-    requestId = await generateRequestId(req)
+    requestId = await generateRequestId(requestUrl)
   }
 
   // If the client has provided an HTML request ID, we use it to associate the
@@ -3316,6 +3317,7 @@ async function renderAppPage(
 async function renderToHTMLOrFlightImpl(
   req: BaseNextRequest,
   res: BaseNextResponse,
+  requestUrl: string,
   url: ReturnType<typeof parseRelativeUrl>,
   pagePath: string,
   query: NextParsedUrlQuery,
@@ -3338,6 +3340,7 @@ async function renderToHTMLOrFlightImpl(
   const prepared = await prepareAppPageRender(
     req,
     res,
+    requestUrl,
     url,
     pagePath,
     query,
@@ -3365,6 +3368,7 @@ async function renderToHTMLOrFlightImpl(
 async function prerenderToHTMLOrFlightImpl(
   req: BaseNextRequest,
   res: BaseNextResponse,
+  requestUrl: string,
   url: ReturnType<typeof parseRelativeUrl>,
   pagePath: string,
   query: NextParsedUrlQuery,
@@ -3386,6 +3390,7 @@ async function prerenderToHTMLOrFlightImpl(
   const prepared = await prepareAppPageRender(
     req,
     res,
+    requestUrl,
     url,
     pagePath,
     query,
@@ -3413,6 +3418,7 @@ async function prerenderToHTMLOrFlightImpl(
 export type AppPageRender = (
   req: BaseNextRequest,
   res: BaseNextResponse,
+  requestUrl: string,
   pagePath: string,
   query: NextParsedUrlQuery,
   fallbackRouteParams: OpaqueFallbackRouteParams | null,
@@ -3435,15 +3441,16 @@ type AppPagePreparation = {
 
 function prepareAppPage(
   req: BaseNextRequest,
+  requestUrl: string,
   pagePath: string,
   fallbackRouteParams: OpaqueFallbackRouteParams | null,
   renderOpts: RenderOpts
 ): AppPagePreparation {
-  if (!req.url) {
+  if (!requestUrl) {
     throw new Error('Invalid URL')
   }
 
-  const url = parseRelativeUrl(req.url, undefined, false)
+  const url = parseRelativeUrl(requestUrl, undefined, false)
 
   // We read these values from the request object as, in certain cases,
   // base-server will strip them to opt into different rendering behavior.
@@ -3510,6 +3517,7 @@ function prepareAppPage(
 export const renderToHTMLOrFlight: AppPageRender = (
   req,
   res,
+  requestUrl,
   pagePath,
   query,
   fallbackRouteParams,
@@ -3519,7 +3527,7 @@ export const renderToHTMLOrFlight: AppPageRender = (
   routeMatch
 ) => {
   const { url, parsedRequestHeaders, interpolatedParams, postponedState } =
-    prepareAppPage(req, pagePath, fallbackRouteParams, renderOpts)
+    prepareAppPage(req, requestUrl, pagePath, fallbackRouteParams, renderOpts)
   const { isPrefetchRequest, previouslyRevalidatedTags, nonce } =
     parsedRequestHeaders
   const workStore = createWorkStore({
@@ -3538,6 +3546,7 @@ export const renderToHTMLOrFlight: AppPageRender = (
     renderToHTMLOrFlightImpl,
     req,
     res,
+    requestUrl,
     url,
     pagePath,
     query,
@@ -3556,6 +3565,7 @@ export const renderToHTMLOrFlight: AppPageRender = (
 export const prerenderToHTMLOrFlight: AppPagePrerender = (
   req,
   res,
+  requestUrl,
   pagePath,
   query,
   fallbackRouteParams,
@@ -3566,6 +3576,7 @@ export const prerenderToHTMLOrFlight: AppPagePrerender = (
 ) => {
   const { url, parsedRequestHeaders, interpolatedParams } = prepareAppPage(
     req,
+    requestUrl,
     pagePath,
     fallbackRouteParams,
     renderOpts
@@ -3588,6 +3599,7 @@ export const prerenderToHTMLOrFlight: AppPagePrerender = (
     prerenderToHTMLOrFlightImpl,
     req,
     res,
+    requestUrl,
     url,
     pagePath,
     query,
