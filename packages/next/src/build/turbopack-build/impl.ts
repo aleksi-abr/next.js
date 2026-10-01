@@ -1,5 +1,8 @@
 import path from 'path'
-import { registerUpgradeCleanup } from '../../lib/upgrade/output'
+import {
+  registerUpgradeCleanup,
+  withUpgradeOutput,
+} from '../../lib/upgrade/output'
 import { validateTurboNextConfig } from '../../lib/turbopack-warning'
 import { seedTurbopackCacheIfNeeded } from '../../lib/turbopack-cache-seed'
 import { NextBuildContext } from '../build-context'
@@ -132,16 +135,23 @@ export async function turbopackBuild(telemetry: Telemetry): Promise<{
     sharedTurboOptions,
     hasDeferredEntries && config.experimental.onBeforeDeferredEntries
       ? {
-          onBeforeDeferredEntries: async () => {
-            const workerConfig = await loadConfig(PHASE_PRODUCTION_BUILD, dir, {
-              debugPrerender: NextBuildContext.debugPrerender,
-              reactProductionProfiling:
-                NextBuildContext.reactProductionProfiling,
-              bundler: Bundler.Turbopack,
-            })
+          // Repeated config loading and this hook can await terminal writes.
+          // Yield the terminal until both finish, then resume the held output.
+          onBeforeDeferredEntries: () =>
+            withUpgradeOutput(async () => {
+              const workerConfig = await loadConfig(
+                PHASE_PRODUCTION_BUILD,
+                dir,
+                {
+                  debugPrerender: NextBuildContext.debugPrerender,
+                  reactProductionProfiling:
+                    NextBuildContext.reactProductionProfiling,
+                  bundler: Bundler.Turbopack,
+                }
+              )
 
-            await workerConfig.experimental.onBeforeDeferredEntries?.()
-          },
+              await workerConfig.experimental.onBeforeDeferredEntries?.()
+            }),
         }
       : undefined
   )
