@@ -275,13 +275,14 @@ export async function spawnNextUpgrade(
       // Use the invoking CLI's guides, even when the app runs an older Next.js.
       // Retain them outside the app so dependency changes cannot remove them.
       const bundledDocs = join(__dirname, '../docs')
+      const bundledGuides = join(__dirname, '../lib/upgrade')
       const runDirectory = await mkdtemp(join(tmpdir(), 'next-upgrade-'))
       const guideName = crossesMajor
         ? 'different-major'
         : needsVersionUpdate
           ? 'same-major'
           : 'future-defaults'
-      const guideDirectory = 'docs/01-app/02-guides/upgrading/agentic-upgrade'
+      const guideDirectory = 'upgrade'
       const sharedGuidePath = join(runDirectory, guideDirectory, 'shared.md')
       const guidePath = join(runDirectory, guideDirectory, `${guideName}.md`)
       const futureGuidePath = join(
@@ -293,23 +294,13 @@ export async function spawnNextUpgrade(
 
       try {
         await mkdir(dirname(guidePath), { recursive: true })
-        await cp(
-          join(
-            bundledDocs,
-            '01-app/02-guides/upgrading/agentic-upgrade/shared.md'
-          ),
-          sharedGuidePath
-        )
-        await cp(
-          join(
-            bundledDocs,
-            '01-app/02-guides/upgrading/agentic-upgrade',
-            `${guideName}.md`
-          ),
-          guidePath
-        )
+        await cp(join(bundledGuides, 'shared.md'), sharedGuidePath)
+        await cp(join(bundledGuides, `${guideName}.md`), guidePath)
 
         if (crossesMajor) {
+          await mkdir(join(runDirectory, 'docs/01-app/02-guides/upgrading'), {
+            recursive: true,
+          })
           await cp(
             join(bundledDocs, '01-app/02-guides/upgrading/codemods.md'),
             join(runDirectory, 'docs/01-app/02-guides/upgrading/codemods.md')
@@ -354,13 +345,7 @@ export async function spawnNextUpgrade(
         }
 
         if (upgradeType === 'experimental-future' && needsVersionUpdate) {
-          await cp(
-            join(
-              bundledDocs,
-              '01-app/02-guides/upgrading/agentic-upgrade/future-defaults.md'
-            ),
-            futureGuidePath
-          )
+          await cp(join(bundledGuides, 'future-defaults.md'), futureGuidePath)
         }
 
         if (crossesMajor) {
