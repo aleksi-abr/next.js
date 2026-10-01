@@ -163,6 +163,14 @@ export function withUpgradeTemporaryOutput(child: ChildProcess) {
   })
 }
 
+export function isUpgradeOutputCorked() {
+  return corked
+}
+
+export function isUpgradeOutputManaged() {
+  return managed
+}
+
 export function getUpgradeEnvironment() {
   // Only forward changes made in the workload, not inherited worker markers.
   // Null represents a deletion because IPC drops undefined object values.
