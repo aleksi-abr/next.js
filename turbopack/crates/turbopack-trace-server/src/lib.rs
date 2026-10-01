@@ -140,9 +140,9 @@ pub struct SpanInfo {
     /// `<= span_duration`.
     ///
     /// The store caps the series at `MAX_MEMORY_SAMPLES`; when more samples
-    /// exist in the range, consecutive groups are merged by picking the
-    /// group's max-memory sample (timestamp, value, pressure, and footprint
-    /// kept together).
+    /// exist in the range, consecutive groups are merged: the timestamp and
+    /// value come from the group's max-memory sample, while pressure and
+    /// footprint are the max over the group.
     pub memory_samples: Vec<(i64, u64, u8, u64)>,
 }
 
