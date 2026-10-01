@@ -48,6 +48,8 @@ function summarizeMemorySamples(samples: number[][]): string | null {
   if (!samples || samples.length === 0) return null
   const bytes = samples.map((s) => s[1])
   const pressures = samples.map((s) => s[2] ?? 0)
+  // Footprint is 0 when the platform does not report it.
+  const footprints = samples.map((s) => s[3] ?? 0).filter((f) => f > 0)
   const min = Math.min(...bytes)
   const max = Math.max(...bytes)
   const first = bytes[0]
@@ -55,10 +57,15 @@ function summarizeMemorySamples(samples: number[][]): string | null {
   const delta = last - first
   const deltaSign = delta >= 0 ? '+' : '-'
   const maxPressure = Math.max(...pressures)
+  const footprintSummary =
+    footprints.length > 0
+      ? `, maxFootprint=${formatBytes(Math.max(...footprints))}`
+      : ''
   return (
     `samples=${samples.length}, min=${formatBytes(min)}, max=${formatBytes(max)}, ` +
     `start=${formatBytes(first)}, end=${formatBytes(last)}, ` +
-    `Δ=${deltaSign}${formatBytes(Math.abs(delta))}, maxPressure=${maxPressure}`
+    `Δ=${deltaSign}${formatBytes(Math.abs(delta))}, maxPressure=${maxPressure}` +
+    footprintSummary
   )
 }
 
@@ -155,7 +162,7 @@ export async function startTurboTraceServerCli(
     'query_spans',
     {
       description:
-        'Query spans from a turbopack trace file. Returns spans with timing, CPU usage, attribute details, and TurboMalloc live-memory samples recorded while each span was active. Set `outputType` to "json" for machine-readable output (including the raw `memorySamples` array of `[ts_offset_ticks, bytes, pressure]` triples per span — pressure is 0 = none, higher = more memory pressure) or "markdown" (default) for a human-readable summary. Use the `parent` parameter (with an ID from a previous result) to drill into children. Results are paginated to 20 spans per page.',
+        'Query spans from a turbopack trace file. Returns spans with timing, CPU usage, attribute details, and TurboMalloc live-memory samples recorded while each span was active. Set `outputType` to "json" for machine-readable output (including the raw `memorySamples` array of `[ts_offset_ticks, bytes, pressure, footprint]` tuples per span — pressure is 0 = none, higher = more memory pressure; footprint is the process memory footprint (RSS) in bytes, 0 = not reported) or "markdown" (default) for a human-readable summary. Use the `parent` parameter (with an ID from a previous result) to drill into children. Results are paginated to 20 spans per page.',
       inputSchema: {
         parent: z
           .string()

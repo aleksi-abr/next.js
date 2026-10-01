@@ -65,9 +65,11 @@ pub struct TraceSpanInfo {
     /// TurboMalloc memory-usage samples recorded while this span
     /// (or its example span, for aggregated groups) was live.
     ///
-    /// Each entry is `[ts_offset_from_span_start_in_ticks, bytes, pressure]`,
-    /// where `pressure` is the memory-pressure byte (0 = no pressure, higher
-    /// = more pressure). `100 ticks = 1 µs`. The offset is always `>= 0` and
+    /// Each entry is `[ts_offset_from_span_start_in_ticks, bytes, pressure,
+    /// footprint]`, where `pressure` is the memory-pressure byte (0 = no
+    /// pressure, higher = more pressure) and `footprint` is the process
+    /// memory footprint (RSS) in bytes (0 = not reported by the platform).
+    /// `100 ticks = 1 µs`. The offset is always `>= 0` and
     /// `<= span_duration`. Capped and downsampled by the store.
     pub memory_samples: Vec<Vec<i64>>,
 }
@@ -136,7 +138,9 @@ pub fn query_trace_spans(
                 memory_samples: s
                     .memory_samples
                     .into_iter()
-                    .map(|(ts, mem, pressure)| vec![ts, mem as i64, pressure as i64])
+                    .map(|(ts, mem, pressure, footprint)| {
+                        vec![ts, mem as i64, pressure as i64, footprint as i64]
+                    })
                     .collect(),
             })
             .collect(),

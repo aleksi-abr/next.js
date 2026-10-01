@@ -132,16 +132,18 @@ pub struct SpanInfo {
     /// TurboMalloc memory-usage samples recorded while this span (or its
     /// example span, for aggregated groups) was live.
     ///
-    /// Each tuple is `(ts_offset_from_span_start_in_ticks, bytes, pressure)`,
-    /// where `pressure` is the memory-pressure byte recorded with the sample
-    /// (0 = no pressure, higher = more pressure). `100 ticks = 1 µs`. The
-    /// offset is always `>= 0` and `<= span_duration`.
+    /// Each tuple is `(ts_offset_from_span_start_in_ticks, bytes, pressure,
+    /// footprint)`, where `pressure` is the memory-pressure byte recorded with
+    /// the sample (0 = no pressure, higher = more pressure) and `footprint` is
+    /// the process memory footprint (RSS) in bytes (0 = not reported by the
+    /// platform). `100 ticks = 1 µs`. The offset is always `>= 0` and
+    /// `<= span_duration`.
     ///
     /// The store caps the series at `MAX_MEMORY_SAMPLES`; when more samples
     /// exist in the range, consecutive groups are merged by picking the
-    /// group's max-memory sample (timestamp, value, and pressure kept
-    /// together).
-    pub memory_samples: Vec<(i64, u64, u8)>,
+    /// group's max-memory sample (timestamp, value, pressure, and footprint
+    /// kept together).
+    pub memory_samples: Vec<(i64, u64, u8, u64)>,
 }
 
 /// Result of a `query_spans` call.
@@ -297,11 +299,16 @@ pub fn query_spans(store: &Arc<StoreContainer>, options: QueryOptions) -> QueryR
                 let rel_end = (span_end as i64) - (parent_start as i64);
 
                 let first_start_ticks = *first.start();
-                let memory_samples: Vec<(i64, u64, u8)> = store_ref
+                let memory_samples: Vec<(i64, u64, u8, u64)> = store_ref
                     .memory_samples_for_range_with_ts(first.start(), first.end())
                     .into_iter()
-                    .map(|(ts, mem, pressure, _)| {
-                        ((*ts as i64) - (first_start_ticks as i64), mem, pressure)
+                    .map(|(ts, mem, pressure, footprint)| {
+                        (
+                            (*ts as i64) - (first_start_ticks as i64),
+                            mem,
+                            pressure,
+                            footprint,
+                        )
                     })
                     .collect();
 
@@ -385,11 +392,16 @@ pub fn query_spans(store: &Arc<StoreContainer>, options: QueryOptions) -> QueryR
                 let rel_end = (span_end as i64) - (parent_start as i64);
 
                 let raw_span_start = span_start;
-                let memory_samples: Vec<(i64, u64, u8)> = store_ref
+                let memory_samples: Vec<(i64, u64, u8, u64)> = store_ref
                     .memory_samples_for_range_with_ts(span.start(), span.end())
                     .into_iter()
-                    .map(|(ts, mem, pressure, _)| {
-                        ((*ts as i64) - (raw_span_start as i64), mem, pressure)
+                    .map(|(ts, mem, pressure, footprint)| {
+                        (
+                            (*ts as i64) - (raw_span_start as i64),
+                            mem,
+                            pressure,
+                            footprint,
+                        )
                     })
                     .collect();
 
