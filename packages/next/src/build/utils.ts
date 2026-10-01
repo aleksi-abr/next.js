@@ -1,3 +1,4 @@
+import { throwUpgradeError } from '../lib/upgrade/output'
 import type {
   NextConfigComplete,
   NextConfigRuntime,
@@ -1247,7 +1248,7 @@ export function detectConflictingPaths(
         'See more info here: https://nextjs.org/docs/messages/conflicting-ssg-paths\n\n' +
         conflictingPathsOutput
     )
-    process.exit(1)
+    throwUpgradeError('Conflicting paths returned from getStaticPaths')
   }
 }
 

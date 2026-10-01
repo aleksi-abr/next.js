@@ -1,3 +1,4 @@
+import { exitWithUpgradeOutput } from '../../../../lib/upgrade/output'
 import type webpack from 'next/dist/compiled/webpack/webpack'
 import {
   UNDERSCORE_GLOBAL_ERROR_ROUTE,
@@ -1245,7 +1246,7 @@ const nextAppLoader: AppLoader = async function nextAppLoader() {
           pagePath.replace(`${APP_DIR_ALIAS}/`, '')
         )} doesn't have a root layout. To fix this error, make sure every page has a root layout.`
       )
-      process.exit(1)
+      await exitWithUpgradeOutput(1)
     } else {
       // In dev we'll try to create a root layout
       const [createdRootLayout, rootLayoutPath] = await verifyRootLayout({
