@@ -69,8 +69,8 @@ export async function validateTurboNextConfig({
     )
 
     if (typeof rawNextConfig === 'function') {
-      // Validation evaluates the raw export again after initialization. Await
-      // async configs with live output, just like the original config load.
+      // Validation evaluates the config again after output may be held. Keep
+      // its logs buffered; the wrapper skips the menu if a write appears stuck.
       const configFunction = rawNextConfig as any
       rawNextConfig = await withUpgradeOutput(async () =>
         configFunction(configPhase, { defaultConfig })

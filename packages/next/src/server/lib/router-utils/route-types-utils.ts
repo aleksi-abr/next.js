@@ -379,8 +379,8 @@ export async function createRouteTypesManifest({
 
   // Process redirects
   if (typeof redirects === 'function') {
-    // These config hooks run again during type generation, including after
-    // initial startup. Let them finish awaited writes while the menu is hidden.
+    // Type generation calls these hooks again after startup. Keep output held;
+    // the wrapper can Skip a pending menu if the hook appears stuck on a write.
     const rd = await withUpgradeOutput(async () => redirects())
 
     for (const item of rd) {
@@ -396,8 +396,8 @@ export async function createRouteTypesManifest({
 
   // Process rewrites
   if (typeof rewrites === 'function') {
-    // Like redirects, this hook may await a log write. Borrow the terminal so
-    // type generation can finish instead of waiting indefinitely on corking.
+    // Rewrites use the same safeguard: ordinary hooks leave the menu alone,
+    // while a suspected write stall releases logs through a permanent Skip.
     const rw = await withUpgradeOutput(async () => rewrites())
 
     const allSources = Array.isArray(rw)

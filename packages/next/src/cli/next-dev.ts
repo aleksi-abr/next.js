@@ -36,7 +36,6 @@ import {
   killUpgradeWork,
   restoreUpgradeEnvironment,
   signalUpgradeWork,
-  withUpgradeTemporaryOutput,
 } from '../lib/upgrade/output'
 import {
   getReservedPortExplanation,
@@ -81,7 +80,6 @@ let isTurbopack: boolean
 let traceUploadUrl: string
 let sessionStopHandled = false
 let upgradeController: AbortController | null = null
-let upgradeOffered = false
 let upgradeInProgress = false
 let interruption: NodeJS.Signals | null = null
 
@@ -91,8 +89,8 @@ let outputHeld = false
 let managedDev = false
 let upgradeEnvironment: Record<string, string | null> | null = null
 
-// The server can exit before the user chooses. Retain its result while the
-// parent keeps the choice alive, then exit with that result if the user skips.
+// Keep the offer Promise after it settles so replacement workers cannot offer
+// again. Retain a stopped server's result until the user chooses Skip.
 let upgradeTask: Promise<void> | null = null
 let workExitCode: number | null = null
 let devSpanAttrs: { 'rage-restart': boolean; 'missing-next-dir': boolean } = {
@@ -359,7 +357,6 @@ const nextDev = async (
     if (!outputHeld) {
       return
     }
-    upgradeOffered = true
     upgradeInProgress = true
     const controller = new AbortController()
     upgradeController = controller
@@ -686,9 +683,9 @@ const nextDev = async (
         })
       })
 
-      // Context starts the independent choice; output requests temporarily lend
-      // the terminal to the child. Ready messages continue normal dev startup.
-      // None of these waits should stop the server while the user is deciding.
+      // Context starts the independent choice. Skip permanently releases logs;
+      // fatal output hides the menu until the child closes. Ready messages keep
+      // normal dev startup moving while the user is deciding.
       worker.on('message', (msg: any) => {
         if (msg && typeof msg === 'object') {
           if (
@@ -702,7 +699,7 @@ const nextDev = async (
             upgradeEnvironment = msg.nextUpgradeEnvironment ?? null
             const context = msg.nextUpgradeContext as UpgradeContext
             distDir = context.distDir
-            if (upgradeOffered) {
+            if (upgradeTask !== null) {
               return
             }
             const initialAssessment =
@@ -717,9 +714,9 @@ const nextDev = async (
               }
             )
             receivedUpgradeContext?.()
-          } else if (msg.nextUpgradeOutputLimit) {
-            // Skip the pending choice without stopping the server. Future
-            // replacement workers also start with their terminal released.
+          } else if (msg.nextUpgradeSkip) {
+            // Memory pressure or a suspected callback stall ends the choice,
+            // not dev. Replacement workers also start with output released.
             outputHeld = false
             upgradeController?.abort()
             void withUpgradePromptHidden(async () => {
@@ -731,21 +728,15 @@ const nextDev = async (
               void handleSessionStop('SIGTERM')
             })
           } else if (msg.nextUpgradeOutput) {
-            // Awaited config writes borrow the terminal and then return it.
-            // A fatal exit instead flushes and closes the worker before showing
-            // the still-pending choice again, so logs cannot overwrite it.
-            const reveal =
-              msg.nextUpgradeOutput === 'temporary'
-                ? withUpgradePromptHidden(() =>
-                    withUpgradeTemporaryOutput(worker)
-                  )
-                : revealWorkerExit()
+            // Fatal output hides the menu until the worker has flushed and
+            // closed; the independent upgrade choice can then remain available.
+            const reveal = revealWorkerExit()
             void reveal.catch((error) => {
               console.error(error)
               void handleSessionStop('SIGTERM')
             })
           } else if (msg.nextWorkerReady) {
-            if (outputHeld && upgradeOffered) {
+            if (outputHeld && upgradeTask !== null) {
               // A replacement child loads config with live output. Hide the
               // existing choice until it has corked and reported its context.
               void withUpgradePromptHidden(

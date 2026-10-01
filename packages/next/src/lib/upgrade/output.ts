@@ -4,18 +4,13 @@ import { updateInitialEnv } from '@next/env'
 
 // The parent owns the menu; the work process keeps its real TTY and buffers
 // writes in its own stdout/stderr. IPC carries permission to print, not logs.
-// These flags are separate: supervision survives Skip, corking can be temporary,
-// and a permanent release prevents later callbacks from holding output again.
+// Keep supervision after Skip, but never hold output again once the parent
+// has released it. Config still loads with live output before the first cork.
 let corked = false
 let managed = false
 let initialEnvironment: Record<string, string | undefined> | null = null
 let released = false
 let outputLimitCheck: ReturnType<typeof setInterval> | null = null
-
-// Several callbacks may need live output at once. Share one permission request
-// and return the terminal to the menu only after the last callback finishes.
-let temporaryOutput: Promise<void> | null = null
-let outputUsers = 0
 
 // Worker pipes switch between normal forwarding and consuming held output.
 // Separate listeners wake callers waiting for the child's streams to uncork.
@@ -23,10 +18,10 @@ const workerReleases = new Set<() => void>()
 const workerHolds = new Set<() => void>()
 const releaseListeners = new Set<() => void>()
 
-// A controlled exit stops owned resources and flushes once, even if multiple
-// errors or signals ask to exit. Upgrade instead force-kills from the parent.
+// A controlled exit waits for remaining worker/native logs and flushes once,
+// even if multiple errors or signals ask to exit. Upgrade instead force-kills
+// from the parent, which also owns cleanup of any remaining subprocesses.
 const cleanups = new Set<() => Promise<unknown>>()
-let stopping: Promise<void> | null = null
 let exiting: Promise<never> | null = null
 
 // Keep retired children from receiving more signals through stale callbacks.
@@ -122,51 +117,6 @@ export function killUpgradeWork(child: ChildProcess) {
   killedWork.add(child)
 }
 
-export function withUpgradeTemporaryOutput(child: ChildProcess) {
-  // The caller hides the prompt before granting the terminal. A queued writer
-  // may exit while another owns it; otherwise wait until the child's trailing
-  // writes finish before allowing the prompt to resume.
-  if (!child.connected) {
-    return Promise.resolve()
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    const finish = (error: Error | null) => {
-      child.off('message', onMessage)
-      child.off('exit', onExit)
-      if (error) {
-        reject(error)
-      } else {
-        resolve()
-      }
-    }
-    const onExit = () => finish(null)
-    const onMessage = (message: {
-      nextUpgradeOutputDone: boolean | undefined
-    }) => {
-      if (message?.nextUpgradeOutputDone) {
-        finish(null)
-      }
-    }
-    child.on('message', onMessage)
-    child.once('exit', onExit)
-    // This release is temporary: the child will cork again after its callbacks
-    // finish and acknowledge with nextUpgradeOutputDone before the menu resumes.
-    child.send(
-      { nextUpgradeContinue: true, nextUpgradeTemporary: true },
-      (error: Error | null) => {
-        if (error) {
-          finish(error)
-        }
-      }
-    )
-  })
-}
-
-export function isUpgradeOutputCorked() {
-  return corked
-}
-
 export function isUpgradeOutputManaged() {
   return managed
 }
@@ -209,10 +159,27 @@ export function restoreUpgradeEnvironment(
   updateInitialEnv(restoredEnvironment)
 }
 
+// The parent must close its menu before this process prints. Both the buffer
+// limit and a suspected callback stall use the same permanent Skip message.
+function skipUpgradePrompt() {
+  if (process.connected && process.send) {
+    process.send({ nextUpgradeSkip: true }, (error: Error | null) => {
+      if (error) {
+        released = true
+        uncorkUpgradeOutput()
+        console.error('Could not skip the upgrade prompt:', error)
+      }
+    })
+  } else {
+    released = true
+    uncorkUpgradeOutput()
+  }
+}
+
 export function corkUpgradeOutput() {
   // Own one cork level only. Repeated requests must not require extra uncorks,
   // and a process that is released or exiting must keep its output visible.
-  if (corked || released || stopping || exiting) {
+  if (corked || released || exiting) {
     return
   }
 
@@ -231,16 +198,7 @@ export function corkUpgradeOutput() {
     }
     clearInterval(outputLimitCheck!)
     outputLimitCheck = null
-    if (process.connected && process.send) {
-      process.send({ nextUpgradeOutputLimit: true }, (error: Error | null) => {
-        if (error) {
-          uncorkUpgradeOutput()
-          console.error('Could not release buffered workload output:', error)
-        }
-      })
-    } else {
-      uncorkUpgradeOutput()
-    }
+    skipUpgradePrompt()
   }, 1000)
   // This is a coarse memory safeguard; it must not keep an otherwise idle
   // process alive. A burst can exceed the threshold between checks.
@@ -268,15 +226,12 @@ export function handleUpgradeOutputMessages() {
     'message',
     (message: {
       nextUpgradeContinue: boolean | undefined
-      nextUpgradeTemporary: boolean | undefined
       nextUpgradeStop: 'SIGINT' | 'SIGTERM' | undefined
     }) => {
       if (message?.nextUpgradeContinue) {
-        // Skip releases permanently. A callback borrowing the terminal leaves
-        // released false so it can cork again once its live writes are done.
-        if (!message.nextUpgradeTemporary) {
-          released = true
-        }
+        // Skip is permanent, whether chosen by the user or requested by a
+        // safeguard. Later callbacks keep the normal terminal behavior.
+        released = true
         uncorkUpgradeOutput()
       }
       if (message?.nextUpgradeStop) {
@@ -292,14 +247,14 @@ export function handleUpgradeOutputMessages() {
   )
   process.once('disconnect', () => {
     // Release even an exit already awaiting permission: the parent can no
-    // longer acknowledge, and temporary writers must not capture output again.
+    // longer acknowledge, so buffered errors must use the normal terminal.
     released = true
     uncorkUpgradeOutput()
     void exitWithUpgradeOutput(1)
   })
 }
 
-export async function requestUpgradeOutput(temporary: boolean) {
+async function requestUpgradeOutput() {
   if (!corked) {
     return
   }
@@ -307,18 +262,15 @@ export async function requestUpgradeOutput(temporary: boolean) {
   // The parent must leave the menu before this child writes to the terminal.
   // A disconnected parent cannot acknowledge; favor visibility in that case.
   if (process.connected && process.send) {
-    process.send(
-      { nextUpgradeOutput: temporary ? 'temporary' : true },
-      (error: Error | null) => {
-        if (error) {
-          uncorkUpgradeOutput()
-          console.error(
-            'Could not request the terminal for workload output:',
-            error
-          )
-        }
+    process.send({ nextUpgradeOutput: true }, (error: Error | null) => {
+      if (error) {
+        uncorkUpgradeOutput()
+        console.error(
+          'Could not request the terminal for workload output:',
+          error
+        )
       }
-    )
+    })
     await waitForUpgradeOutput()
   } else {
     uncorkUpgradeOutput()
@@ -326,66 +278,46 @@ export async function requestUpgradeOutput(temporary: boolean) {
 }
 
 export async function withUpgradeOutput<T>(write: () => Promise<T>) {
-  if (!corked && !temporaryOutput) {
+  if (!corked) {
     return write()
   }
 
-  // Config callbacks can await stdout write callbacks, which cannot finish
-  // while corked. Borrow the terminal rather than stall those callbacks.
-  // Nested calls share the same permission and keep the menu hidden until all
-  // callbacks and their trailing writes finish.
-  outputUsers++
-  temporaryOutput ??= requestUpgradeOutput(true)
+  // Run config hooks without disturbing the menu or flushing earlier logs.
+  // A hook can await a stdout/stderr write callback that corking prevents from
+  // completing. After five seconds, buffered output makes that a suspected
+  // stall: ask the parent to Skip permanently, then let the same work continue.
+  // Node cannot tell what a Promise is waiting for. A slow network hook while
+  // any logs are held can also trigger Skip; this does not cancel the hook.
+  const stalledOutputCheck = setInterval(() => {
+    if (
+      !corked ||
+      process.stdout.writableLength + process.stderr.writableLength === 0
+    ) {
+      return
+    }
+    clearInterval(stalledOutputCheck)
+    skipUpgradePrompt()
+  }, 5_000)
+
+  // Recheck so a hook that starts writing later is also covered. Do not keep an
+  // otherwise idle process alive, and remove this check when the hook settles.
+  stalledOutputCheck.unref()
   try {
-    await temporaryOutput
     return await write()
   } finally {
-    try {
-      await flushUpgradeOutput()
-    } finally {
-      if (--outputUsers === 0) {
-        temporaryOutput = null
-        if (process.connected && process.send) {
-          if (!released && !stopping) {
-            corkUpgradeOutput()
-          }
-          process.send({ nextUpgradeOutputDone: true })
-        }
-      }
-    }
+    clearInterval(stalledOutputCheck)
   }
 }
 
 export function registerUpgradeCleanup(cleanup: () => Promise<unknown>) {
-  // Register long-lived workers/native resources for ordinary or fatal exits.
+  // Worker pipes and native callbacks can still have logs in transit when the
+  // owner fails. Finish their delivery before flushing Node's stream buffers;
+  // killing the process group alone would discard those last messages.
   // Owners remove their registration when they finish so cleanup runs once.
   if (managed) {
     cleanups.add(cleanup)
   }
   return () => cleanups.delete(cleanup)
-}
-
-export function stopUpgradeWork() {
-  stopping ??= (async () => {
-    // Resources can finish initializing during shutdown. Drain those too, and
-    // report each cleanup error without abandoning the other owned resources.
-    while (cleanups.size) {
-      const pending = [...cleanups]
-      cleanups.clear()
-      const results = await Promise.allSettled(
-        pending.map((cleanup) => cleanup())
-      )
-      for (const result of results) {
-        if (result.status === 'rejected') {
-          console.error(
-            'Could not stop an upgrade workload resource:',
-            result.reason
-          )
-        }
-      }
-    }
-  })()
-  return stopping
 }
 
 export function exitWithUpgradeOutput(code: number): Promise<never> {
@@ -394,8 +326,27 @@ export function exitWithUpgradeOutput(code: number): Promise<never> {
   exiting ??= (async () => {
     if (managed) {
       try {
-        await requestUpgradeOutput(false)
-        await stopUpgradeWork()
+        await requestUpgradeOutput()
+
+        // The shared exit promise already prevents repeated cleanup. Include
+        // resources initialized during shutdown and report each failure while
+        // letting the other resources finish delivering their logs.
+        while (cleanups.size) {
+          const pending = [...cleanups]
+          cleanups.clear()
+          const results = await Promise.allSettled(
+            pending.map((cleanup) => cleanup())
+          )
+          for (const result of results) {
+            if (result.status === 'rejected') {
+              console.error(
+                'Could not stop an upgrade workload resource:',
+                result.reason
+              )
+            }
+          }
+        }
+
         await flushUpgradeOutput()
       } catch (error) {
         uncorkUpgradeOutput()
@@ -423,7 +374,9 @@ export function pipeWorkerOutput(
   source: NodeJS.ReadableStream,
   destination: Writable
 ) {
-  if (!managed) {
+  // Skip is permanent. New sources can use normal backpressure without
+  // registering transitions that will never be used.
+  if (!managed || released) {
     source.pipe(destination, { end: false })
     return
   }
@@ -468,8 +421,8 @@ export function pipeWorkerOutput(
     }
   }
 
-  // Register both transitions because a pipe may be created before corking or
-  // during a temporary release. Remove its callbacks when the source finishes.
+  // A pipe may start before or after corking. Register both transitions, and
+  // remove their callbacks when the source finishes.
   workerReleases.add(release)
   workerHolds.add(hold)
   if (corked) {
@@ -481,7 +434,7 @@ export function pipeWorkerOutput(
   source.once('close', cleanup)
 }
 
-export function uncorkUpgradeOutput() {
+function uncorkUpgradeOutput() {
   if (!corked) {
     return
   }
