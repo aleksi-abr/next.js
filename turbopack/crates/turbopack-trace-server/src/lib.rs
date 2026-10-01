@@ -300,7 +300,7 @@ pub fn query_spans(store: &Arc<StoreContainer>, options: QueryOptions) -> QueryR
                 let memory_samples: Vec<(i64, u64, u8)> = store_ref
                     .memory_samples_for_range_with_ts(first.start(), first.end())
                     .into_iter()
-                    .map(|(ts, mem, pressure)| {
+                    .map(|(ts, mem, pressure, _)| {
                         ((*ts as i64) - (first_start_ticks as i64), mem, pressure)
                     })
                     .collect();
@@ -388,7 +388,7 @@ pub fn query_spans(store: &Arc<StoreContainer>, options: QueryOptions) -> QueryR
                 let memory_samples: Vec<(i64, u64, u8)> = store_ref
                     .memory_samples_for_range_with_ts(span.start(), span.end())
                     .into_iter()
-                    .map(|(ts, mem, pressure)| {
+                    .map(|(ts, mem, pressure, _)| {
                         ((*ts as i64) - (raw_span_start as i64), mem, pressure)
                     })
                     .collect();
