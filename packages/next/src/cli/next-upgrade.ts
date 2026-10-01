@@ -19,7 +19,7 @@ import { PHASE_PRODUCTION_BUILD } from '../shared/lib/constants'
 type NextUpgradeOptions = {
   revision: string
   verbose: boolean
-  ai: boolean | string | undefined
+  agent: boolean | string | undefined
 }
 
 const CODEMOD_COMMAND_PLACEHOLDER = '<codemod-command>'
@@ -122,7 +122,7 @@ async function prepareUpgradeSkill(
 
 async function resolveAIUpgradeType(
   directory: string,
-  option: NextUpgradeOptions['ai']
+  option: NextUpgradeOptions['agent']
 ): Promise<string> {
   if (typeof option === 'string') {
     return option
@@ -180,7 +180,7 @@ export async function spawnNextUpgrade(
 ) {
   const baseDir = getProjectDir(directory)
 
-  if (options.ai) {
+  if (options.agent) {
     try {
       const expectedVersion = process.env.__NEXT_UPGRADE_EXPECTED_CLI_VERSION
       delete process.env.__NEXT_UPGRADE_EXPECTED_CLI_VERSION
@@ -198,14 +198,16 @@ export async function spawnNextUpgrade(
         const canaryVersion = await resolveCanaryVersion()
         if (process.env.__NEXT_VERSION !== canaryVersion) {
           const [command, ...runnerArgs] = getNpxCommand(baseDir).split(' ')
-          const aiArgument =
-            typeof options.ai === 'string' ? `--ai=${options.ai}` : '--ai'
+          const agentArgument =
+            typeof options.agent === 'string'
+              ? `--agent=${options.agent}`
+              : '--agent'
           const args = [
             ...runnerArgs,
             `next@${canaryVersion}`,
             'upgrade',
             baseDir,
-            aiArgument,
+            agentArgument,
           ]
 
           if (options.verbose) {
@@ -230,11 +232,11 @@ export async function spawnNextUpgrade(
       if (!findDir(baseDir, 'app') && !findDir(baseDir, 'pages')) {
         throw new Error(
           'No Next.js app found in this directory. Run the command from an app directory or pass its path:\n\n' +
-            `next upgrade [directory] --ai${typeof options.ai === 'string' ? `=${options.ai}` : ''}`
+            `next upgrade [directory] --agent${typeof options.agent === 'string' ? `=${options.agent}` : ''}`
         )
       }
 
-      const upgradeType = await resolveAIUpgradeType(baseDir, options.ai)
+      const upgradeType = await resolveAIUpgradeType(baseDir, options.agent)
 
       if (
         upgradeType !== 'security' &&

@@ -237,7 +237,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'security',
+      agent: 'security',
     })
 
     expect(global.fetch).toHaveBeenCalledTimes(0)
@@ -253,7 +253,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'security',
+      agent: 'security',
     })
 
     expect(Log.error).toHaveBeenCalledWith(
@@ -287,7 +287,7 @@ describe('agentic upgrade prompts', () => {
       await spawnNextUpgrade('/workspace/app', {
         revision: 'latest',
         verbose: false,
-        ai: 'security',
+        agent: 'security',
       })
 
       expect(global.fetch).toHaveBeenCalledTimes(1)
@@ -305,7 +305,7 @@ describe('agentic upgrade prompts', () => {
 
   it.each([true, 'security', 'latest', 'experimental-future'])(
     'delegates %s to the exact canary and preserves its failure status',
-    async (ai) => {
+    async (agent) => {
       delete process.env.__NEXT_UPGRADE_EXPECTED_CLI_VERSION
       const version = '99.0.0-canary.35'
       jest
@@ -320,7 +320,7 @@ describe('agentic upgrade prompts', () => {
       await spawnNextUpgrade('/workspace/app', {
         revision: 'latest',
         verbose: true,
-        ai,
+        agent,
       })
 
       expect(global.fetch).toHaveBeenCalledTimes(1)
@@ -331,7 +331,7 @@ describe('agentic upgrade prompts', () => {
           `next@${version}`,
           'upgrade',
           '/workspace/app',
-          ai === true ? '--ai' : `--ai=${ai}`,
+          agent === true ? '--agent' : `--agent=${agent}`,
           '--verbose',
         ],
         expect.objectContaining({
@@ -368,7 +368,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'security',
+      agent: 'security',
     })
 
     expect(Log.error).toHaveBeenCalledWith(
@@ -1185,7 +1185,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'security',
+      agent: 'security',
     })
 
     expect(prepareUpgrade).toHaveBeenCalledWith('/workspace/app', 'security')
@@ -1234,7 +1234,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: true,
-      ai: 'security',
+      agent: 'security',
     })
 
     const [guidePath, guide] = jest.mocked(writeFile).mock.calls[0]
@@ -1248,7 +1248,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: true,
+      agent: true,
     })
 
     expect(loadConfig).toHaveBeenCalledWith(
@@ -1269,7 +1269,7 @@ describe('agentic upgrade prompts', () => {
       await spawnNextUpgrade('/workspace/app', {
         revision: 'latest',
         verbose: false,
-        ai: true,
+        agent: true,
       })
 
       expect(prepareUpgrade).toHaveBeenCalledWith('/workspace/app', policy)
@@ -1293,7 +1293,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'latest',
+      agent: 'latest',
     })
 
     expect(loadConfig).not.toHaveBeenCalled()
@@ -1338,7 +1338,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'security',
+      agent: 'security',
     })
 
     expect(normalizedBootstrapCalls().flat().join('\n')).toContain(
@@ -1367,7 +1367,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'latest',
+      agent: 'latest',
     })
 
     expect(normalizedBootstrapCalls().flat().join('\n')).toContain(
@@ -1392,7 +1392,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'experimental-future',
+      agent: 'experimental-future',
     })
 
     const prompt = normalizedBootstrapCalls().flat().join('\n')
@@ -1419,7 +1419,7 @@ describe('agentic upgrade prompts', () => {
       await spawnNextUpgrade('/workspace/app', {
         revision: 'latest',
         verbose: false,
-        ai: policy,
+        agent: policy,
       })
 
       expect(prepareUpgrade).toHaveBeenCalledWith('/workspace/app', policy)
@@ -1450,7 +1450,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'latest',
+      agent: 'latest',
     })
 
     const prompt = normalizedBootstrapCalls().flat().join('\n')
@@ -1501,7 +1501,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'experimental-future',
+      agent: 'experimental-future',
     })
 
     expect(crossSpawn).toHaveBeenCalledTimes(1)
@@ -1592,7 +1592,7 @@ describe('agentic upgrade prompts', () => {
     await spawnNextUpgrade('/workspace/app', {
       revision: 'latest',
       verbose: false,
-      ai: 'experimental-future',
+      agent: 'experimental-future',
     })
 
     expect(

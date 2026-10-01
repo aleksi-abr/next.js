@@ -139,7 +139,7 @@ describe('prepare latest upgrade', () => {
       upgrade: {
         status: 'blocked',
         reason:
-          "The installed Next.js version (17.2.0-canary.4) is a canary prerelease. Security advisories target stable versions, and prereleases do not reliably follow stable version ordering, so an advisory could be a false positive. To upgrade to the latest canary release, run this command from the app's directory:\n\nnpx next@canary upgrade --ai=latest",
+          "The installed Next.js version (17.2.0-canary.4) is a canary prerelease. Security advisories target stable versions, and prereleases do not reliably follow stable version ordering, so an advisory could be a false positive. To upgrade to the latest canary release, run this command from the app's directory:\n\nnpx next@canary upgrade --agent=latest",
       },
     })
     await expect(prepareUpgrade(directory, 'security')).rejects.toThrow(
@@ -430,7 +430,7 @@ describe('prepare latest upgrade', () => {
           upgrade: expect.objectContaining({
             status: 'blocked',
             reason: expect.stringContaining(
-              'npx next@canary upgrade --ai=latest'
+              'npx next@canary upgrade --agent=latest'
             ),
           }),
         })
@@ -457,7 +457,7 @@ describe('prepare latest upgrade', () => {
           upgrade: expect.objectContaining({
             status: 'blocked',
             reason: expect.stringContaining(
-              'npx next@canary upgrade --ai=latest'
+              'npx next@canary upgrade --agent=latest'
             ),
           }),
         })

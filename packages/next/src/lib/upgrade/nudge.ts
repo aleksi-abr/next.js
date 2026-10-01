@@ -293,7 +293,7 @@ async function nudgeUpgradeForAgent(
       recommendation = 'We recommend you adopt these Future Defaults.'
       break
   }
-  const command = `next upgrade --ai=${reminder.policy}`
+  const command = `next upgrade --agent=${reminder.policy}`
   const message = `${summary}
 
 **${recommendation}**
@@ -453,7 +453,7 @@ export async function runUpgrade(directory: string, policy: NudgeKind) {
   await spawnNextUpgrade(directory, {
     revision: 'latest',
     verbose: false,
-    ai: policy,
+    agent: policy,
   })
   return process.exitCode ?? 0
 }

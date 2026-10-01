@@ -169,7 +169,7 @@ describe('security upgrade nudge', () => {
       name: 'SecurityFatalError',
       exitCode: 1,
       message: expect.stringMatching(
-        /affected by a known security vulnerability[\s\S]*\*\*We strongly recommend you upgrade Next\.js\.\*\*[\s\S]*upgrade recommendation\. Retry the same command to continue the original task\.[\s\S]*include this upgrade recommendation even if the retry succeeds\.[\s\S]*ask the user once:[\s\S]*in a separate Git worktree\?[\s\S]*Use their worktree choice and continue in this agent session[\s\S]*Run this command from this app's directory:[\s\S]*```\nnext upgrade --ai=(?:security|latest|experimental-future)\n```/
+        /affected by a known security vulnerability[\s\S]*\*\*We strongly recommend you upgrade Next\.js\.\*\*[\s\S]*upgrade recommendation\. Retry the same command to continue the original task\.[\s\S]*include this upgrade recommendation even if the retry succeeds\.[\s\S]*ask the user once:[\s\S]*in a separate Git worktree\?[\s\S]*Use their worktree choice and continue in this agent session[\s\S]*Run this command from this app's directory:[\s\S]*```\nnext upgrade --agent=(?:security|latest|experimental-future)\n```/
       ),
     })
     expect(warn).not.toHaveBeenCalled()
@@ -515,7 +515,7 @@ describe('latest upgrade nudge', () => {
       name: 'UpgradeNudgeError',
       exitCode: 1,
       message: expect.stringMatching(
-        /Next\.js 17\.0\.0 is available\.[\s\S]*\*\*We recommend you upgrade Next\.js\.\*\*[\s\S]*upgrade recommendation\. Retry the same command to continue the original task\.[\s\S]*include this upgrade recommendation even if the retry succeeds\.[\s\S]*ask the user once:[\s\S]*in a separate Git worktree\?[\s\S]*Use their worktree choice and continue in this agent session[\s\S]*Run this command from this app's directory:[\s\S]*```\nnext upgrade --ai=(?:security|latest|experimental-future)\n```[\s\S]*registry\.npmjs\.org/
+        /Next\.js 17\.0\.0 is available\.[\s\S]*\*\*We recommend you upgrade Next\.js\.\*\*[\s\S]*upgrade recommendation\. Retry the same command to continue the original task\.[\s\S]*include this upgrade recommendation even if the retry succeeds\.[\s\S]*ask the user once:[\s\S]*in a separate Git worktree\?[\s\S]*Use their worktree choice and continue in this agent session[\s\S]*Run this command from this app's directory:[\s\S]*```\nnext upgrade --agent=(?:security|latest|experimental-future)\n```[\s\S]*registry\.npmjs\.org/
       ),
     })
     await expect(
@@ -608,7 +608,7 @@ describe('composed latest nudge', () => {
         name: 'SecurityFatalError',
         exitCode: 1,
         message: expect.stringContaining(
-          `\`\`\`\nnext upgrade --ai=${policy}\n\`\`\``
+          `\`\`\`\nnext upgrade --agent=${policy}\n\`\`\``
         ),
       })
       await expect(nudge).rejects.toMatchObject({
@@ -740,7 +740,7 @@ describe('composed future nudge', () => {
     ).rejects.toMatchObject({
       name: 'UpgradeNudgeError',
       message: expect.stringMatching(
-        /Next\.js 17\.0\.0 is available[\s\S]*include this upgrade recommendation even if the retry succeeds\.[\s\S]*next upgrade --ai=(?:security|latest|experimental-future)\n```/
+        /Next\.js 17\.0\.0 is available[\s\S]*include this upgrade recommendation even if the retry succeeds\.[\s\S]*next upgrade --agent=(?:security|latest|experimental-future)\n```/
       ),
     })
   })
@@ -861,7 +861,7 @@ describe('human upgrade nudge', () => {
       )
       jest.mocked(getAgentName).mockResolvedValue('codex')
       await expect(run(policy)).rejects.toMatchObject({
-        message: expect.stringContaining(`next upgrade --ai=${policy}`),
+        message: expect.stringContaining(`next upgrade --agent=${policy}`),
       })
     }
   )
@@ -939,7 +939,7 @@ describe('human upgrade nudge', () => {
       expect(spawnNextUpgrade).toHaveBeenCalledWith(directory, {
         revision: 'latest',
         verbose: false,
-        ai: policy,
+        agent: policy,
       })
     }
   )
@@ -996,7 +996,7 @@ describe('human upgrade nudge', () => {
     await expect(
       nudgeUpgrade(directory, config(false), 'dev')
     ).rejects.toMatchObject({
-      message: expect.stringContaining('next upgrade --ai=latest'),
+      message: expect.stringContaining('next upgrade --agent=latest'),
     })
   })
 
