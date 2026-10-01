@@ -9,7 +9,11 @@ import '../require-hook'
 
 import url from 'url'
 import path from 'path'
-import { corkUpgradeOutput, flushUpgradeOutput } from '../../lib/upgrade/output'
+import {
+  corkUpgradeOutput,
+  flushUpgradeOutput,
+  getUpgradeEnvironment,
+} from '../../lib/upgrade/output'
 import loadConfig, { type ConfiguredExperimentalFeature } from '../config'
 import { finalizeBundlerFromConfig, getBundlerFromEnv } from '../../lib/bundler'
 import { serveStatic } from '../serve-static'
@@ -240,6 +244,7 @@ export async function initialize(opts: {
         require('../../lib/upgrade/nudge') as typeof import('../../lib/upgrade/nudge')
       process.send({
         nextUpgradeContext: getUpgradeContext(developmentConfig),
+        nextUpgradeEnvironment: getUpgradeEnvironment(),
       })
     }
 
@@ -284,6 +289,7 @@ export async function initialize(opts: {
           if (process.connected) {
             process.send!({
               nextUpgradeContext: upgradeContext,
+              nextUpgradeEnvironment: getUpgradeEnvironment(),
               ...(promptAssessment.status === 'fulfilled'
                 ? { nextUpgradeAssessment: promptAssessment.value }
                 : {}),

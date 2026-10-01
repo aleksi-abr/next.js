@@ -1,5 +1,6 @@
 import type { Writable } from 'stream'
 import { spawnSync, type ChildProcess } from 'child_process'
+import { updateInitialEnv } from '@next/env'
 
 // The parent owns the menu; the work process keeps its real TTY and buffers
 // writes in its own stdout/stderr. IPC carries permission to print, not logs.
@@ -7,6 +8,7 @@ import { spawnSync, type ChildProcess } from 'child_process'
 // and a permanent release prevents later callbacks from holding output again.
 let corked = false
 let managed = false
+let initialEnvironment: Record<string, string | undefined> | null = null
 let released = false
 let outputLimitCheck: ReturnType<typeof setInterval> | null = null
 
@@ -161,6 +163,40 @@ export function withUpgradeTemporaryOutput(child: ChildProcess) {
   })
 }
 
+export function getUpgradeEnvironment() {
+  // Only forward changes made in the workload, not inherited worker markers.
+  // Null represents a deletion because IPC drops undefined object values.
+  const environment: Record<string, string | null> = {}
+  if (initialEnvironment) {
+    for (const key of new Set([
+      ...Object.keys(initialEnvironment),
+      ...Object.keys(process.env),
+    ])) {
+      if (initialEnvironment[key] !== process.env[key]) {
+        environment[key] = process.env[key] ?? null
+      }
+    }
+  }
+  return environment
+}
+
+export function restoreUpgradeEnvironment(
+  environment: Record<string, string | null> | null
+) {
+  // Apply config and .env changes only at handoff, including deletions and
+  // the cache used by future env loads in the upgrade process.
+  const restoredEnvironment: Record<string, string | undefined> = {}
+  for (const [key, value] of Object.entries(environment ?? {})) {
+    if (value === null) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
+    restoredEnvironment[key] = value ?? undefined
+  }
+  updateInitialEnv(restoredEnvironment)
+}
+
 export function corkUpgradeOutput() {
   // Own one cork level only. Repeated requests must not require extra uncorks,
   // and a process that is released or exiting must keep its output visible.
@@ -209,6 +245,7 @@ export function handleUpgradeOutputMessages() {
   // Supervise config loading without holding its writes. Only the workload
   // entry point calls this; descendants must keep producing their own output.
   managed = true
+  initialEnvironment = { ...process.env }
 
   process.on(
     'message',
