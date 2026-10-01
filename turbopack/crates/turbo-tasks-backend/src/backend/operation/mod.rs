@@ -26,6 +26,7 @@ use turbo_tasks::{
 };
 
 pub use self::aggregation_update::ComputeDirtyAndCleanUpdate;
+pub(crate) use self::invalidate::try_make_task_dirty;
 use crate::{
     backend::{
         EventDescription, TaskDataCategory, TurboTasksBackend,
@@ -179,6 +180,7 @@ pub trait ExecuteContext<'e>: Sized {
         task_id2: TaskId,
         category: TaskDataCategory,
     ) -> (Self::TaskGuardImpl, Self::TaskGuardImpl);
+    fn remove_state_dependency(&mut self, reader: TaskId, key: &turbo_tasks::StateKey);
     fn schedule_task(&self, task: &Self::TaskGuardImpl, parent_priority: TaskPriority);
     fn get_current_task_priority(&self) -> TaskPriority;
     fn operation_suspend_point<T>(&mut self, op: &T)
@@ -268,11 +270,11 @@ thread_local! {
     static IN_INTERIOR_MUTATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Marks the current thread as running an `InteriorMutator::mutate` closure, so that debug builds
-/// can catch the closure calling back into the backend.
+/// Marks the current thread as mutating state inside a backend operation,
+/// so debug builds can catch callbacks that start a nested operation.
 ///
-/// The closure runs inside an operation, so creating a context from it would begin a nested one,
-/// which waits on a pending snapshot that is itself waiting on the outer one.
+/// The mutation runs inside an operation, so creating another context from it would begin a
+/// nested operation, which waits on a pending snapshot that is itself waiting on the outer one.
 pub(crate) struct InteriorMutationScope(());
 
 impl InteriorMutationScope {
@@ -289,9 +291,10 @@ impl InteriorMutationScope {
         #[cfg(debug_assertions)]
         assert!(
             !IN_INTERIOR_MUTATION.with(|flag| flag.get()),
-            "turbo-tasks was called from inside an `InteriorMutator::mutate` closure (such as a \
-             `State::update_conditionally` update), which must not call back into turbo-tasks: it \
-             would deadlock against a pending snapshot. Do that work before or after."
+            "turbo-tasks was called while updating state inside a backend operation (such as a \
+             `State::update_conditionally` closure or a backend-owned state write), which must \
+             not call back into turbo-tasks: it would deadlock against a pending snapshot. Do \
+             that work before or after."
         );
     }
 }
@@ -1151,6 +1154,32 @@ impl<'e> ExecuteContext<'e> for ExecuteContextImpl<'e> {
         category: TaskDataCategory,
     ) -> Option<Self::TaskGuardImpl> {
         self.open_task(task_id, category, TaskAccess::AllowMissing)
+    }
+
+    fn remove_state_dependency(&mut self, reader: TaskId, key: &turbo_tasks::StateKey) {
+        // Same lock order as read_state: state first, then reader. A re-read
+        // either revives the outdated edge first, or observes it removed.
+        let backend = self.backend;
+        let mut states = backend.states.lock();
+        let Some(mut task) = self.try_get_task(reader, TaskDataCategory::Data) else {
+            if let Some(state) = states.get_mut(key) {
+                state.dependents.remove(&reader);
+                backend
+                    .state_dirty
+                    .store(true, std::sync::atomic::Ordering::Release);
+            }
+            return;
+        };
+        let shared_key = Arc::new(key.clone());
+        if task.remove_outdated_state_dependencies(&shared_key) {
+            task.remove_state_dependencies(&shared_key);
+            if let Some(state) = states.get_mut(key) {
+                state.dependents.remove(&reader);
+                backend
+                    .state_dirty
+                    .store(true, std::sync::atomic::Ordering::Release);
+            }
+        }
     }
 
     fn open_or_create_task_storage(

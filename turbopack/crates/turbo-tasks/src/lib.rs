@@ -14,6 +14,7 @@
 #![feature(mpmc_channel)]
 
 pub mod backend;
+pub mod backend_state;
 mod capture_future;
 mod collectibles;
 mod completion;
@@ -78,6 +79,7 @@ pub use crate::manager::InlineExecutionStats;
 #[cfg(feature = "task_dirty_cause")]
 pub use crate::task_dirty_cause::TaskDirtyCause;
 pub use crate::{
+    backend_state::{StateKey, StateOwner, StateOwnerRoot, StateSlot, TurboTasksState},
     capture_future::TurboTasksPanic,
     collectibles::CollectiblesSource,
     completion::{Completion, Completions},
@@ -92,7 +94,8 @@ pub use crate::{
     },
     error::PrettyPrintError,
     id::{
-        ExecutionId, FunctionId, LocalTaskId, TRANSIENT_TASK_BIT, TaskId, TraitTypeId, ValueTypeId,
+        ExecutionId, FunctionId, LocalTaskId, StateFactoryId, TRANSIENT_TASK_BIT, TaskId,
+        TraitTypeId, ValueTypeId,
     },
     interior_mutation::InteriorMutator,
     invalidation::{
@@ -171,6 +174,14 @@ macro_rules! fxindexset {
         }
     };
 }
+
+/// Declares a registered, per-owner backend state slot.
+///
+/// ```ignore
+/// #[turbo_tasks::state]
+/// static OPTIONS: turbo_tasks::StateSlot<Option<MyOptions>> = turbo_tasks::StateSlot::new();
+/// ```
+pub use turbo_tasks_macros::state;
 
 #[doc = include_str!("../singleton_pattern.md")]
 pub mod _singleton_pattern {}

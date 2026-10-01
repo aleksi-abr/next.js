@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use turbo_bincode::{new_turbo_bincode_decoder, turbo_bincode_decode, turbo_bincode_encode};
 use turbo_persistence::CommitStats;
 use turbo_tasks::{
-    DynTaskInputs, RawVc, TaskId,
+    DynTaskInputs, RawVc, StateKey, TaskId,
     macro_helpers::NativeFunction,
     panic_hooks::{PanicHookGuard, register_panic_hook},
     parallel,
@@ -37,6 +37,7 @@ enum InfraKey {
     Operations = 0,
     NextFreeTaskId = 1,
     GcRoots = 2,
+    States = 3,
 }
 
 impl InfraKey {
@@ -263,11 +264,23 @@ impl TurboBackingStorage {
         get(&self.inner.database).context("Unable to read GC roots from database")
     }
 
+    pub(crate) fn load_states(&self) -> Result<Vec<(StateKey, Vec<u8>, Vec<TaskId>, Option<u64>)>> {
+        let Some(bytes) = self
+            .inner
+            .database
+            .get(KeySpace::Infra, InfraKey::States.key().as_ref())?
+        else {
+            return Ok(Vec::new());
+        };
+        turbo_bincode_decode(bytes.borrow()).context("Unable to restore backend-owned states")
+    }
+
     pub(crate) fn save_snapshot<I>(
         &self,
         operations: Vec<Arc<AnyOperation>>,
         roots: Option<Vec<(TaskId, TtlCounter)>>,
         snapshots: Vec<I>,
+        state_snapshot: Option<Vec<u8>>,
     ) -> Result<SnapshotMeta>
     where
         I: IntoIterator<Item = SnapshotItem> + Send + Sync,
@@ -367,7 +380,7 @@ impl TurboBackingStorage {
             let mut next_task_id = get_next_free_task_id(&batch)?;
             next_task_id = next_task_id.max(snapshot_meta.max_next_task_id + 1);
 
-            save_infra(&batch, next_task_id, operations, roots)?;
+            save_infra(&batch, next_task_id, operations, roots, state_snapshot)?;
             {
                 let _span = tracing::trace_span!("commit").entered();
                 // Byte totals are the physical on-disk bytes (post-compression, including .sst /
@@ -496,6 +509,7 @@ fn save_infra(
     next_task_id: u32,
     operations: Vec<Arc<AnyOperation>>,
     roots: Option<Vec<(TaskId, TtlCounter)>>,
+    state_snapshot: Option<Vec<u8>>,
 ) -> Result<(), anyhow::Error> {
     batch
         .put(
@@ -527,6 +541,15 @@ fn save_infra(
                 WriteBuffer::SmallVec(roots),
             )
             .context("Unable to write GC roots")?;
+    }
+    if let Some(states) = state_snapshot {
+        batch
+            .put(
+                KeySpace::Infra,
+                WriteBuffer::Borrowed(InfraKey::States.key().as_ref()),
+                WriteBuffer::Vec(states),
+            )
+            .context("Unable to write backend-owned states")?;
     }
     // Safety: save_infra is called after all concurrent writes to Infra are done.
     unsafe { batch.flush(KeySpace::Infra)? };
@@ -737,6 +760,7 @@ mod tests {
                 task_id: deleted_id,
                 task_type_hash: collision_hash.to_le_bytes(),
             }]],
+            None,
         )?;
 
         let db = &storage.inner.database;
