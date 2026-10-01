@@ -171,6 +171,10 @@ export function isUpgradeOutputManaged() {
   return managed
 }
 
+export function isUpgradeOutputPending() {
+  return managed && !released
+}
+
 export function getUpgradeEnvironment() {
   // Only forward changes made in the workload, not inherited worker markers.
   // Null represents a deletion because IPC drops undefined object values.
@@ -255,6 +259,11 @@ export function handleUpgradeOutputMessages() {
   managed = true
   initialEnvironment = { ...process.env }
 
+  // Replacement dev workers keep supervision after Skip, but no longer have
+  // a pending choice. Build workers use their own entry marker instead.
+  released =
+    process.env.NEXT_PRIVATE_UPGRADE_PROMPT !== '1' &&
+    process.env.NEXT_PRIVATE_UPGRADE_BUILD_WORKER !== '1'
   process.on(
     'message',
     (message: {
