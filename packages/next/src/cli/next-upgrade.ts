@@ -7,6 +7,7 @@ import * as Log from '../build/output/log'
 import createSpinner from '../build/spinner'
 import { findDir } from '../lib/find-pages-dir'
 import { getProjectDir } from '../lib/get-project-dir'
+import { warnMissingReactDependencies } from '../lib/warn-missing-react-dependencies'
 import { getNpxCommand } from '../lib/helpers/get-npx-command'
 import { interopDefault } from '../lib/interop-default'
 import { dim } from '../lib/picocolors'
@@ -179,6 +180,7 @@ export async function spawnNextUpgrade(
   options: NextUpgradeOptions
 ) {
   const baseDir = getProjectDir(directory)
+  warnMissingReactDependencies(baseDir)
 
   if (options.ai) {
     try {
