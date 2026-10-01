@@ -135,8 +135,9 @@ export async function turbopackBuild(telemetry: Telemetry): Promise<{
     sharedTurboOptions,
     hasDeferredEntries && config.experimental.onBeforeDeferredEntries
       ? {
-          // Repeated config loading and this hook can await terminal writes.
-          // Yield the terminal until both finish, then resume the held output.
+          // Config and the user hook run while the menu may still hold logs.
+          // Keep them buffered unless the wrapper requests Skip for a suspected
+          // write stall; never cancel the build or reopen the menu afterward.
           onBeforeDeferredEntries: () =>
             withUpgradeOutput(async () => {
               const workerConfig = await loadConfig(

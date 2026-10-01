@@ -26,7 +26,6 @@ import {
   restoreUpgradeEnvironment,
   signalUpgradeWork,
   waitForUpgradeOutput,
-  withUpgradeTemporaryOutput,
 } from '../lib/upgrade/output'
 
 export type NextBuildOptions = {
@@ -215,8 +214,8 @@ async function runBuildChild(
 ): Promise<never> {
   const { nudgeUpgrade, runUpgrade } = await import('../lib/upgrade/nudge.js')
   const controller = new AbortController()
-  let context: UpgradeContext | null = null
-  let upgradeEnvironment: Record<string, string | null> | null = null
+  // Retain the offer Promise after it settles so duplicate context messages
+  // cannot open another menu or start another upgrade.
   let offer: Promise<void> | null = null
   let stopped = false
   let complete = false
@@ -285,6 +284,20 @@ async function runBuildChild(
       worker.send({ nextUpgradeContinue: true })
     }
   }
+
+  // Interrupts and fatal errors both allow held logs to flush before close.
+  // Bound that wait, then stop any descendants left after the worker exits.
+  const waitForBuildExit = async () => {
+    const timeout = setTimeout(() => killUpgradeWork(worker), 5_000)
+    try {
+      const code = await exited
+      killUpgradeWork(worker)
+      return code
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
   const stopBuildChild = (forceKill: boolean) => {
     stopping ??= (async () => {
       // Upgrade discards this build and its logs. Confirm termination without
@@ -304,32 +317,18 @@ async function runBuildChild(
           interruption === 'SIGINT' ? 'SIGINT' : 'SIGTERM'
         )
       }
-      const timeout = setTimeout(() => killUpgradeWork(worker), 5_000)
-      try {
-        await exited
-        killUpgradeWork(worker)
-      } finally {
-        clearTimeout(timeout)
-      }
+      await waitForBuildExit()
     })()
     return stopping
   }
   const revealFailure = () => {
     revealing ??= withUpgradePromptHidden(async () => {
       release()
-      const timeout = setTimeout(() => killUpgradeWork(worker), 5_000)
-      try {
-        const code = await exited
-        killUpgradeWork(worker)
-        if (workError) {
-          console.error(workError)
-        } else if (code !== 0) {
-          console.error(
-            `Build stopped (${worker.signalCode ?? `exit ${code}`}).`
-          )
-        }
-      } finally {
-        clearTimeout(timeout)
+      const code = await waitForBuildExit()
+      if (workError) {
+        console.error(workError)
+      } else if (code !== 0) {
+        console.error(`Build stopped (${worker.signalCode ?? `exit ${code}`}).`)
       }
     })
     return revealing
@@ -337,6 +336,12 @@ async function runBuildChild(
 
   const onSignal = (signal: NodeJS.Signals) => {
     stopSpinnerInput()
+    // A second interrupt is the escape from slow cleanup. Upgrade can also
+    // start stopping, so require a previous interrupt before taking this path.
+    if (interruption && stopping) {
+      killUpgradeWork(worker)
+      return
+    }
     interruption ??= signal
     controller.abort()
     void stopBuildChild(false)
@@ -394,10 +399,11 @@ async function runBuildChild(
       }
     } else if (message.nextBuildComplete) {
       complete = true
-    } else if (message.nextUpgradeContext && !context) {
-      context = message.nextUpgradeContext
-      upgradeEnvironment = message.nextUpgradeEnvironment ?? null
-      const upgradeContext = context!
+    } else if (message.nextUpgradeContext && offer === null) {
+      // Only this offer uses the config snapshot, so keep it in its closure
+      // rather than adding another pair of supervisor-wide state variables.
+      const upgradeContext = message.nextUpgradeContext as UpgradeContext
+      const upgradeEnvironment = message.nextUpgradeEnvironment ?? null
       offer = (async () => {
         let action
         try {
@@ -437,18 +443,11 @@ async function runBuildChild(
           release()
         }
       })()
-    } else if (message.nextUpgradeOutputLimit) {
-      // Buffer pressure skips the choice, not the build. Restore the prompt
-      // before granting output and keep waiting for the existing workload.
+    } else if (message.nextUpgradeSkip) {
+      // Memory pressure or a suspected callback stall skips the choice, not
+      // the build. Close the menu before releasing logs; work keeps running.
       controller.abort()
       void withUpgradePromptHidden(async () => release()).catch((error) => {
-        console.error(error)
-        onSignal('SIGTERM')
-      })
-    } else if (message.nextUpgradeOutput === 'temporary') {
-      void withUpgradePromptHidden(() =>
-        withUpgradeTemporaryOutput(worker)
-      ).catch((error) => {
         console.error(error)
         onSignal('SIGTERM')
       })
@@ -462,7 +461,9 @@ async function runBuildChild(
 
   try {
     const code = await exited
-    if (!stopping && !released) {
+    // A reveal may already have released logs. Finish its diagnostic before
+    // exiting, even when config failed before supplying an upgrade context.
+    if (!stopping && (!released || revealing)) {
       await revealFailure()
     }
     await offer
@@ -517,16 +518,6 @@ export function startBuildWorker() {
     }
   )
   process.send!({ nextBuildReady: true })
-}
-
-// Tests can enter the worker directly; the CLI dispatch uses the same function
-// while preserving the original invocation for preloads and user config.
-if (
-  require.main === module &&
-  process.env.NEXT_PRIVATE_UPGRADE_BUILD_WORKER === '1' &&
-  process.send
-) {
-  startBuildWorker()
 }
 
 export { nextBuild, saveCpuProfile }
